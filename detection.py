@@ -11,8 +11,8 @@ def rescale_frame(frame, percent=75):
     dim = (width, height)
     return cv.resize(frame, dim, interpolation =cv.INTER_AREA)
 
-def draw_centers_of_largest_contours(img, n, contours, color, size, offset=(0,0)):
-    largest_n_contours = heapq.nlargest(n,contours,key=cv.contourArea)
+def draw_centers_of_largest_contours(img, n, contours, color, size, offset=(0,0), f=cv.contourArea):
+    largest_n_contours = heapq.nlargest(n,contours,key=f)
     cv.drawContours(img,largest_n_contours,-1,color,size, offset=offset)
     for c in largest_n_contours:
         M = cv.moments(c)
@@ -35,8 +35,17 @@ def draw_color_histogram(img, colors=['r','g','b'], color_labels=['Red','Green',
         plt.xlim([0,256])
     plt.show()
 
+def heuristic(contour):
+    rect = cv.minAreaRect(contour)
+    area = rect[1][0] * rect[1][1]
+    diff = cv.contourArea(cv.convexHull(contour)) - cv.contourArea(contour)
+    cent = rect[0]
+    heur = 2.25 * area - 5 * diff
+    return heur
+
 cap = cv.VideoCapture('/Users/karthikdharmarajan/Documents/URobotics/Course Footage/GOPR1145.MP4')
 saliency = cv.saliency.StaticSaliencySpectralResidual_create()
+count = 0
 
 while cap.isOpened():
     ret, img_in = cap.read()
@@ -64,49 +73,53 @@ while cap.isOpened():
                 largest_countour = max(contours,key=cv.contourArea)
                 x,y,w,h = cv.boundingRect(largest_countour)
                 spinner = img_in[y:y+h, x:x+w]
-                cv.imshow("spinner",spinner)
 
-                draw_color_histogram(spinner,colors=['b','g','r'],color_labels=['Blue','Green','Red'])
-                draw_color_histogram(cv.cvtColor(spinner,cv.COLOR_BGR2HSV),colors=['c','y','m'],color_labels=['Hue','Saturation','Value'])
+                hsv_spinner = cv.cvtColor(spinner,cv.COLOR_BGR2HSV)
+                blurred_spinner = cv.medianBlur(hsv_spinner,7)
+                # cv.imshow('blurred_spinner', cv.cvtColor(blurred_spinner,cv.COLOR_HSV2BGR))
 
-                # Blur on Spinner
-                blurred = cv.blur(spinner, (15,15))
-                # cv.imshow("blurred",blurred)
+                # Index 0: Hue, Index 1: Saturation, Index 2: Value
+                individual_channels = cv.split(blurred_spinner)
 
-                hsv = cv.cvtColor(spinner, cv.COLOR_BGR2HSV)
-                # 2nd layer of thresholding (For Red Spinner Part)
-                hsv_threshold_red = cv.inRange(hsv,(0,0,0),(179,70,255))
-                # cv.imshow("hsv threshold for red spinner", hsv_threshold_red)
+                individual_channels[0] = cv.equalizeHist(individual_channels[0])
+                individual_channels[1] = cv.equalizeHist(individual_channels[1])
+                individual_channels[2] = cv.equalizeHist(individual_channels[2])
 
-                # Getting Center of HSV Contours for Red
-                hsv_contours, _ = cv.findContours(hsv_threshold_red,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
-                draw_centers_of_largest_contours(img_in, 2, hsv_contours, (0,0,255), 3, offset=(x,y))
+                equalized_image = cv.merge((individual_channels[0],individual_channels[1],individual_channels[2]))
+                cv.imshow('equalized_image', cv.cvtColor(equalized_image, cv.COLOR_HSV2BGR))
+                if count % 100 == 0:
+                    draw_color_histogram(equalized_image,colors=['c','y','m'],color_labels=['Hue','Saturation','Value'])
+                count += 1
 
-                # 2nd layer of thresholding (For Black Spinner Part)
-                hsv_threshold_black = cv.inRange(hsv,(0,190,0),(179,255,160))
-                # cv.imshow("hsv threshold for black spinner", hsv_threshold_black)
+                # General Thresholds
+                _, hue_threshold_norm = cv.threshold(individual_channels[0],0,255,cv.THRESH_BINARY+cv.THRESH_OTSU)
+                _, saturation_threshold_inv = cv.threshold(individual_channels[1],0,255,cv.THRESH_BINARY_INV+cv.THRESH_OTSU)
+                _, value_threshold_inv = cv.threshold(individual_channels[2],0,255,cv.THRESH_BINARY_INV+cv.THRESH_OTSU)
 
-                # Getting Center of HSV Contours for Black
-                hsv_contours, _ = cv.findContours(hsv_threshold_black,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
-                draw_centers_of_largest_contours(img_in, 2, hsv_contours, (0,0,0), 3, offset=(x,y))
+                cv.imshow("hue_threshold_norm", hue_threshold_norm)
+                cv.imshow("saturation_threshold_inv", saturation_threshold_inv)
+                cv.imshow("value_threshold_inv", value_threshold_inv)
 
-                # 2nd layer of thresholding (For Green Spinner Part)
-                # Equalize Histogram for 3 color channels
-                # Plot histograms before and after
-                grey_spinner = cv.cvtColor(blurred, cv.COLOR_BGR2GRAY)
-                equalized_spinner = cv.equalizeHist(grey_spinner)
-                # cv.imshow('equalized_spinner', equalized_spinner)
+                # red_threshold = hue_threshold_norm & saturation_threshold_inv & value_threshold_inv
+                red_threshold = cv.bitwise_and(hue_threshold_norm, cv.bitwise_and(saturation_threshold_inv, value_threshold_inv))
+                # cv.imshow("red_threshold", red_threshold)
+                red_contours, _ = cv.findContours(red_threshold,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
+                draw_centers_of_largest_contours(img_in,2,red_contours,(0,0,255),3,offset=(x,y))
 
-                # Green Detection Algorithm
-                roulette_rim = cv.inRange(equalized_spinner, 190, 255)
-                # cv.imshow('roulette_rim',roulette_rim)
-                hsv_threshold_green = cv.inRange(hsv,(80,212,0),(179,255,230))
+                # black_threshold = hue_threshold_norm & !saturation_threshold_inv & value_threshold_inv
+                black_threshold = cv.bitwise_and(hue_threshold_norm, cv.bitwise_and(cv.bitwise_not(saturation_threshold_inv), value_threshold_inv))
+                # cv.imshow("black_threshold", black_threshold)
+                black_contours, _ = cv.findContours(black_threshold,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
+                draw_centers_of_largest_contours(img_in,2,black_contours,(0,0,0),3,offset=(x,y))
 
-                # green_binarized_image = hsv_threshold_green & !roulette_rim & !hsv_threshold_black & !hsv_threshold_red
+                # green_threshold = !hue_threshold_norm & !saturation_threshold_inv & !value_threshold_inv
+                green_threshold = cv.bitwise_and(cv.bitwise_not(hue_threshold_norm), cv.bitwise_and(cv.bitwise_not(saturation_threshold_inv), cv.bitwise_not(value_threshold_inv)))
+
+                cv.imshow("green_threshold", green_threshold)
+                green_contours, _ = cv.findContours(green_threshold,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
+                draw_centers_of_largest_contours(img_in,2,green_contours,(0,255,0),3,offset=(x,y), f=heuristic)
+
                 # add confidence score (heuristics)
-                green_binarized_image = cv.bitwise_and(hsv_threshold_green,cv.bitwise_and(cv.bitwise_not(roulette_rim),cv.bitwise_and(cv.bitwise_not(hsv_threshold_black),cv.bitwise_not(hsv_threshold_red))))
-                green_contours, _ = cv.findContours(green_binarized_image,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
-                draw_centers_of_largest_contours(img_in, 2, green_contours, (0,255,0), 3, offset=(x,y))
 
                 # Showing Spinner Bounding Box
                 cv.rectangle(img_in,(x,y),(x+w,y+h),(0,255,0),2)
@@ -116,8 +129,6 @@ while cap.isOpened():
             # cv.imshow("threshold", threshold)
 
         cv.imshow('img_in',img_in)
-
-
 
     if cv.waitKey(1) & 0xFF == ord('q'):
         break
