@@ -93,7 +93,7 @@ while cap.isOpened():
                 hsv_spinner = cv.cvtColor(spinner,cv.COLOR_BGR2HSV)
                 blurred_spinner = cv.bilateralFilter(hsv_spinner,7,50,50)
                 bgr_blurred_spinner = cv.cvtColor(blurred_spinner,cv.COLOR_HSV2BGR)
-                # cv.imshow('blurred_spinner', bgr_blurred_spinner)
+                cv.imshow('bgr_blurred_spinner', bgr_blurred_spinner)
 
                 # Index 0: Hue, Index 1: Saturation, Index 2: Value
                 individual_channels = cv.split(blurred_spinner)
@@ -116,7 +116,6 @@ while cap.isOpened():
                 _, b_threshold_background = cv.threshold(Lab_individual_channels[2],b_threshold_background_value,255,cv.THRESH_BINARY)
                 cv.imshow('b_threshold_background',b_threshold_background)
 
-
                 b_edges_bias = 5
                 b_threshold_edges = b_threshold_value - b_edges_bias
                 _, b_threshold_edges = cv.threshold(Lab_individual_channels[2],b_threshold_edges,255,cv.THRESH_BINARY_INV)
@@ -124,7 +123,8 @@ while cap.isOpened():
 
                 if args.hist:
                     if count % args.n == 0:
-                        draw_color_histogram(equalized_image if args.equalized else blurred_spinner,colors=['c','y','m'],color_labels=['Hue','Saturation','Value'])
+                        # draw_color_histogram(equalized_image if args.equalized else blurred_spinner,colors=['c','y','m'],color_labels=['Hue','Saturation','Value'])
+                        draw_color_histogram(Lab_spinner,colors=['c','y','m'],color_labels=['L','a','b'])
                     count += 1
 
                 # General Thresholds
