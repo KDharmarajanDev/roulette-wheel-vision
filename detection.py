@@ -114,17 +114,17 @@ while cap.isOpened():
                 b_bias = 3
                 b_threshold_background_value = b_bias + b_threshold_value
                 _, b_threshold_background = cv.threshold(Lab_individual_channels[2],b_threshold_background_value,255,cv.THRESH_BINARY)
-                cv.imshow('b_threshold_background',b_threshold_background)
+                # cv.imshow('b_threshold_background',b_threshold_background)
 
                 b_edges_bias = 5
                 b_threshold_edges = b_threshold_value - b_edges_bias
                 _, b_threshold_edges = cv.threshold(Lab_individual_channels[2],b_threshold_edges,255,cv.THRESH_BINARY_INV)
-                cv.imshow('b_threshold_edges',b_threshold_edges)
+                # cv.imshow('b_threshold_edges',b_threshold_edges)
 
                 if args.hist:
                     if count % args.n == 0:
-                        # draw_color_histogram(equalized_image if args.equalized else blurred_spinner,colors=['c','y','m'],color_labels=['Hue','Saturation','Value'])
-                        draw_color_histogram(Lab_spinner,colors=['c','y','m'],color_labels=['L','a','b'])
+                        draw_color_histogram(equalized_image if args.equalized else blurred_spinner,colors=['c','y','m'],color_labels=['Hue','Saturation','Value'])
+                        # draw_color_histogram(Lab_spinner,colors=['c','y','m'],color_labels=['L','a','b'])
                     count += 1
 
                 # General Thresholds
@@ -132,21 +132,23 @@ while cap.isOpened():
                 _, saturation_threshold_inv = cv.threshold(individual_channels[1],0,255,cv.THRESH_BINARY_INV|cv.THRESH_OTSU)
                 _, value_threshold_inv = cv.threshold(individual_channels[2],0,255,cv.THRESH_BINARY_INV|cv.THRESH_OTSU)
 
-                # red_threshold = hue_threshold_norm & saturation_threshold_inv & value_threshold_inv
-                red_threshold = cv.bitwise_and(hue_threshold_norm, cv.bitwise_and(saturation_threshold_inv, value_threshold_inv))
+                # cv.imshow('hue_threshold_norm', hue_threshold_norm)
+                # cv.imshow('saturation_threshold_inv', saturation_threshold_inv)
+                # cv.imshow('value_threshold_inv', value_threshold_inv)
+
+                # red_threshold = hue_threshold_norm & saturation_threshold_inv & value_threshold_inv & !b_threshold_background
+                red_threshold = cv.bitwise_and(cv.bitwise_and(hue_threshold_norm, cv.bitwise_and(saturation_threshold_inv, value_threshold_inv)),cv.bitwise_not(b_threshold_background))
                 red_contours, _ = cv.findContours(red_threshold,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
                 draw_centers_of_largest_contours(img_in,2,red_contours,(0,0,255),3,offset=(x,y))
 
-                # black_threshold = hue_threshold_norm & !saturation_threshold_inv & value_threshold_inv
-                black_threshold = cv.bitwise_and(hue_threshold_norm, cv.bitwise_and(cv.bitwise_not(saturation_threshold_inv), value_threshold_inv))
+                # black_threshold = hue_threshold_norm & !saturation_threshold_inv & value_threshold_inv & !b_threshold_background
+                black_threshold = cv.bitwise_and(cv.bitwise_and(hue_threshold_norm, cv.bitwise_and(cv.bitwise_not(saturation_threshold_inv), value_threshold_inv)),cv.bitwise_not(b_threshold_background))
                 black_contours, _ = cv.findContours(black_threshold,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
                 draw_centers_of_largest_contours(img_in,2,black_contours,(0,0,0),3,offset=(x,y))
 
-                # green_threshold = !hue_threshold_norm & !saturation_threshold_inv & !value_threshold_inv & !b_threshold_background & !b_threshold_edges
-                green_threshold = cv.bitwise_and(cv.bitwise_and(
-                    cv.bitwise_and(cv.bitwise_not(hue_threshold_norm), cv.bitwise_and(cv.bitwise_not(saturation_threshold_inv), cv.bitwise_not(value_threshold_inv)))
-                    ,cv.bitwise_not(b_threshold_background)),cv.bitwise_not(b_threshold_edges))
-                kernel = np.ones((4,4),np.uint8)
+                # green_threshold = !saturation_threshold_inv & !value_threshold_inv & !b_threshold_background & !b_threshold_edges
+                green_threshold = cv.bitwise_and(cv.bitwise_and(cv.bitwise_and(cv.bitwise_not(saturation_threshold_inv), cv.bitwise_not(value_threshold_inv)),cv.bitwise_not(b_threshold_background)),cv.bitwise_not(b_threshold_edges))
+                kernel = np.ones((6,6),np.uint8)
                 green_threshold = cv.morphologyEx(green_threshold,cv.MORPH_OPEN,kernel)
                 cv.imshow("green_threshold", green_threshold)
                 green_contours, _ = cv.findContours(green_threshold,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
